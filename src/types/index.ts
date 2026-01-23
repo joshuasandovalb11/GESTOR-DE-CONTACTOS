@@ -1,9 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// src/types/index.ts
-
 export interface Contacto {
-  ID_Telefono: string; // ID de la fila del número
-  ID_Contacto: string; // ID del contacto
+  ID_Telefono: string;
+  ID_Contacto: string;
   Nombre: string;
   Telefono: string;
 }
@@ -11,6 +8,7 @@ export interface Contacto {
 export interface ApiResponse {
   success: boolean;
   message: string;
-  details?: any;
+  deviceName?: string;
+  serial?: string;
   preview?: Contacto[];
 }

@@ -16,9 +16,12 @@ import {
   FaCheckCircle,
   FaFilter,
   FaChevronDown,
+  FaPlus,
 } from "react-icons/fa";
 import type { Contacto, ApiResponse } from "../types";
 import { AnimatePresence, motion } from "framer-motion";
+import { toast } from "sonner";
+import { UserRoundPen, X } from "lucide-react";
 
 interface ImportError {
   row: number;
@@ -27,10 +30,15 @@ interface ImportError {
   reason: string;
 }
 
+interface ContactTableProps {
+  deviceName?: string;
+}
+
 const API_URL = import.meta.env.DEV ? "http://localhost:5000" : "";
 
 const cleanPhoneNumber = (phone: string) => {
-  return String(phone || "").replace(/\D/g, "");
+  const cleaned = String(phone || "").replace(/\D/g, "");
+  return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 };
 
 const formatPhoneNumber = (value: string) => {
@@ -78,9 +86,13 @@ const Modal = ({
   );
 };
 
-export default function ContactTable() {
+// ACEPTAMOS LA PROP DEVICE NAME
+export default function ContactTable({
+  deviceName = "Android",
+}: ContactTableProps) {
   const [contacts, setContacts] = useState<Contacto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
   const [editingContact, setEditingContact] = useState<Contacto | null>(null);
@@ -98,10 +110,15 @@ export default function ContactTable() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [importing, setImporting] = useState(false);
+  const [importSuccess, setImportSuccess] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [unchangedCount, setUnchangedCount] = useState(0);
+  const [newInsertCount, setNewInsertCount] = useState(0);
+
   const [filterType, setFilterType] = useState("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [generatedFileName, setGeneratedFileName] = useState("");
 
   const isFormValid = () => {
     const cleanPhone = cleanPhoneNumber(editForm.newPhone);
@@ -111,42 +128,71 @@ export default function ContactTable() {
   const fetchContacts = async () => {
     setLoading(true);
     try {
-      const response = await axios.get<ApiResponse>(`${API_URL}/get-contacts`);
-      if (response.data.success && response.data.preview) {
-        setContacts(response.data.preview);
+      const response = await axios.get<ApiResponse>(`${API_URL}/get-contacts`, {
+        params: { deviceName: deviceName },
+      });
+
+      if (response.data.success) {
+        const loadedContacts = response.data.preview || [];
+        setContacts(loadedContacts);
+        setHasSynced(true);
+
+        if ((response.data as any).fileName) {
+          setGeneratedFileName((response.data as any).fileName);
+        }
       }
     } catch (error) {
       console.error(error);
-      alert(
-        "Error al conectar con el servidor. Revisa que el backend esté corriendo.",
-      );
+      toast.error("Error al conectar con el servidor.");
     } finally {
       setLoading(false);
     }
   };
 
-  const downloadExcel = () => {
-    if (contacts.length === 0) {
-      alert("Primero sincroniza los contactos para poder exportarlos.");
-      return;
-    }
-    const fileUrl = `${API_URL}/files/Contactos_Clientes.xlsx`;
-
+  const executeDownload = (fileName: string) => {
+    const fileUrl = `${API_URL}/files/${fileName}`;
     const link = document.createElement("a");
     link.href = fileUrl;
-
-    link.setAttribute("download", "Contactos_Clientes.xlsx");
-
+    link.setAttribute("download", fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    toast.success("Descarga iniciada.");
+  };
+
+  const downloadExcel = () => {
+    if (!hasSynced) {
+      toast.warning("Sincroniza los contactos primero.");
+      return;
+    }
+
+    if (contacts.length === 0) {
+      toast("La lista está vacía", {
+        description: "¿Deseas descargar una plantilla vacía?",
+        action: {
+          label: "Descargar",
+          onClick: () => {
+            const finalFileName =
+              generatedFileName || `Plantilla_Contactos.xlsx`;
+            executeDownload(finalFileName);
+          },
+        },
+      });
+      return;
+    }
+
+    const finalFileName =
+      generatedFileName || `Contactos_Clientes - ${deviceName}.xlsx`;
+    executeDownload(finalFileName);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (contacts.length === 0) {
-      alert(
-        "ALERTA: Debes sincronizar los contactos antes de importar un Excel.\n\nEsto es necesario para detectar qué contactos han cambiado y evitar sobrescribir todo innecesariamente.",
-      );
+    if (!hasSynced) {
+      toast.warning("Debes sincronizar antes de importar", {
+        description:
+          "Esto evita duplicar contactos existentes en el dispositivo.",
+        duration: 5000,
+      });
       e.target.value = "";
       return;
     }
@@ -165,23 +211,14 @@ export default function ContactTable() {
       const data: any[] = XLSX.utils.sheet_to_json(ws);
 
       if (data.length === 0) {
-        alert("El archivo Excel está vacío.");
+        toast.error("El archivo Excel está vacío.");
         return;
       }
-      const firstRow = data[0];
-      const requiredColumns = [
-        "ID_Contacto",
-        "ID_Telefono",
-        "Nombre",
-        "Telefono",
-      ];
-      const missingColumns = requiredColumns.filter(
-        (col) => !(col in firstRow),
-      );
 
-      if (missingColumns.length > 0) {
-        alert(
-          `Error de formato: Faltan columnas: ${missingColumns.join(", ")}`,
+      const firstRow = data[0];
+      if (!("Nombre" in firstRow) || !("Telefono" in firstRow)) {
+        toast.error(
+          "Formato inválido. Requiere columnas 'Nombre' y 'Telefono'.",
         );
         return;
       }
@@ -193,31 +230,21 @@ export default function ContactTable() {
 
   const validateExcelData = (data: any[]) => {
     const errors: ImportError[] = [];
-    const changesBatch: any[] = [];
+    const batchOps: any[] = [];
     let unchangedCountLocal = 0;
+    let newInsertCountLocal = 0;
 
     data.forEach((row, index) => {
       const realRowNumber = index + 2;
-
-      if (!row.ID_Contacto || !row.ID_Telefono) {
-        errors.push({
-          row: realRowNumber,
-          name: row.Nombre || "Desconocido",
-          phone: row.Telefono || "---",
-          reason: "Faltan IDs para sincronizar",
-        });
-        return;
-      }
-
       const rawPhone = String(row.Telefono || "");
-      const cleanPhone = rawPhone.replace(/\D/g, "");
+      const cleanPhone = cleanPhoneNumber(rawPhone);
 
       if (cleanPhone.length !== 10) {
         errors.push({
           row: realRowNumber,
           name: row.Nombre || "Desconocido",
           phone: row.Telefono,
-          reason: `Longitud inválida (${cleanPhone.length} dígitos).`,
+          reason: `Teléfono inválido (${cleanPhone.length} dígitos).`,
         });
         return;
       }
@@ -232,69 +259,95 @@ export default function ContactTable() {
         return;
       }
 
-      const originalContact = contacts.find(
-        (c) => String(c.ID_Telefono) === String(row.ID_Telefono),
-      );
+      let existingContact = null;
 
-      if (originalContact) {
-        const originalCleanPhone = cleanPhoneNumber(originalContact.Telefono);
+      if (row.ID_Telefono) {
+        existingContact = contacts.find(
+          (c) => String(c.ID_Telefono) === String(row.ID_Telefono),
+        );
+      }
 
+      if (existingContact) {
+        const originalCleanPhone = cleanPhoneNumber(existingContact.Telefono);
         if (
-          originalContact.Nombre === row.Nombre &&
+          existingContact.Nombre === row.Nombre &&
           originalCleanPhone === cleanPhone
         ) {
           unchangedCountLocal++;
           return;
         }
-      }
 
-      changesBatch.push({
-        ...row,
-        Telefono: cleanPhone,
-      });
+        batchOps.push({
+          type: "UPDATE",
+          ID_Contacto: existingContact.ID_Contacto,
+          ID_Telefono: existingContact.ID_Telefono,
+          Nombre: row.Nombre,
+          Telefono: cleanPhone,
+        });
+      } else {
+        newInsertCountLocal++;
+        batchOps.push({
+          type: "INSERT",
+          Nombre: row.Nombre,
+          Telefono: cleanPhone,
+        });
+      }
     });
 
     setUnchangedCount(unchangedCountLocal);
+    setNewInsertCount(newInsertCountLocal);
     setImportErrors(errors);
-    setValidContactsToUpload(changesBatch);
+    setValidContactsToUpload(batchOps);
 
-    if (errors.length > 0 || changesBatch.length > 0) {
+    if (errors.length > 0 || batchOps.length > 0) {
       setShowErrorModal(true);
     } else {
-      alert(
-        `Análisis completado: No se encontraron cambios.\n${unchangedCountLocal} contactos ya están actualizados en el sistema.`,
+      toast.info(
+        `Analisis Completado: No hay cambios. ${unchangedCountLocal} contactos ya existen.`,
       );
     }
   };
 
-  const startBatchUpdate = async (contactsToProcess: any[]) => {
+  const startBatchUpdate = async (opsToProcess: any[]) => {
     setShowErrorModal(false);
     setImporting(true);
-    setProgress({ current: 0, total: contactsToProcess.length });
+    setImportSuccess(false);
+    setProgress({ current: 0, total: opsToProcess.length });
 
-    for (let i = 0; i < contactsToProcess.length; i++) {
-      const row = contactsToProcess[i];
+    for (let i = 0; i < opsToProcess.length; i++) {
+      const op = opsToProcess[i];
       try {
-        await axios.get(`${API_URL}/update-contact`, {
-          params: {
-            contactId: row.ID_Contacto,
-            phoneId: row.ID_Telefono,
-            newName: row.Nombre,
-            newPhone: row.Telefono,
-          },
-        });
+        if (op.type === "UPDATE") {
+          await axios.get(`${API_URL}/update-contact`, {
+            params: {
+              contactId: op.ID_Contacto,
+              phoneId: op.ID_Telefono,
+              newName: op.Nombre,
+              newPhone: op.Telefono,
+            },
+          });
+        } else if (op.type === "INSERT") {
+          await axios.get(`${API_URL}/add-contact`, {
+            params: {
+              newName: op.Nombre,
+              newPhone: op.Telefono,
+            },
+          });
+        }
       } catch (error) {
-        console.error(`Error fila ${i}`, error);
+        console.error(`Error en fila ${i} (${op.type})`, error);
       }
-      setProgress({ current: i + 1, total: contactsToProcess.length });
+      setProgress({ current: i + 1, total: opsToProcess.length });
     }
 
-    setImporting(false);
-    setSaveSuccess(true);
+    setImportSuccess(true);
+    toast.success("Importación completada con éxito.");
+
     setTimeout(() => {
-      setSaveSuccess(false);
+      setImporting(false);
+      setImportSuccess(false);
       fetchContacts();
-    }, 2000);
+    }, 2500);
   };
 
   const openEditModal = (contact: Contacto) => {
@@ -316,14 +369,15 @@ export default function ContactTable() {
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value;
-    const currentClean = cleanPhoneNumber(rawValue);
 
-    if (currentClean.length <= 10) {
-      setEditForm({ ...editForm, newPhone: formatPhoneNumber(rawValue) });
+    const cleanValue = rawValue.replace(/\D/g, "");
 
-      if (currentClean.length === 10) {
-        setFormErrors((prev) => ({ ...prev, phone: "" }));
-      }
+    if (cleanValue.length > 10) return;
+
+    setEditForm({ ...editForm, newPhone: formatPhoneNumber(rawValue) });
+
+    if (cleanValue.length === 10) {
+      setFormErrors((prev) => ({ ...prev, phone: "" }));
     }
   };
 
@@ -371,18 +425,20 @@ export default function ContactTable() {
 
         setSaveSuccess(true);
         setSaving(false);
+        toast.success("Contacto actualizado.");
 
         setTimeout(() => {
           setEditingContact(null);
           setSaveSuccess(false);
+          fetchContacts();
         }, 1500);
       } else {
-        alert("Error del backend: " + response.data.message);
+        toast.error("Error del backend: " + response.data.message);
         setSaving(false);
       }
     } catch (error) {
       console.error(error);
-      alert("Error al guardar cambios.");
+      toast.error("Error al guardar cambios.");
       setSaving(false);
     }
   };
@@ -404,13 +460,14 @@ export default function ContactTable() {
         setContacts((prev) =>
           prev.filter((c) => c.ID_Contacto !== contactToDelete.ID_Contacto),
         );
+        toast.success("Contacto eliminado.");
         setContactToDelete(null);
       } else {
-        alert("No se pudo eliminar: " + response.data.error);
+        toast.error("No se pudo eliminar: " + response.data.error);
       }
     } catch (error) {
       console.error(error);
-      alert("Error de conexión al eliminar.");
+      toast.error("Error de conexión al eliminar.");
     } finally {
       setIsDeleting(false);
     }
@@ -439,7 +496,7 @@ export default function ContactTable() {
   });
 
   return (
-    <div className="w-full max-w-5xl animate-fade-in-up relative">
+    <div className="w-full animate-fade-in-up relative">
       {/* MODAL DE RESUMEN DE IMPORTACIÓN */}
       <AnimatePresence>
         {showErrorModal && (
@@ -459,7 +516,7 @@ export default function ContactTable() {
                 )}
                 {importErrors.length > 0
                   ? "Reporte de Validación"
-                  : "Confirmar Actualización"}
+                  : "Confirmar Importación"}
               </h3>
               <button
                 onClick={() => setShowErrorModal(false)}
@@ -470,28 +527,47 @@ export default function ContactTable() {
             </div>
 
             <div className="p-6 overflow-y-auto bg-slate-50">
-              {/* CAJA DE RESUMEN PRINCIPAL */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
                 <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide mb-3 border-b border-slate-100 pb-2">
-                  Análisis del Archivo
+                  Resumen de Acciones
                 </h4>
                 <ul className="space-y-3 text-sm">
-                  <li className="flex items-start gap-3">
-                    <div className="bg-green-100 text-green-600 p-1.5 rounded-full mt-0.5">
-                      <FaSync className="w-3 h-3" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-slate-800 text-lg block leading-none">
-                        {validContactsToUpload.length}
-                      </span>
-                      <span className="text-slate-500">
-                        Contactos tienen <strong>cambios reales</strong> y serán
-                        actualizados.
-                      </span>
-                    </div>
-                  </li>
+                  {/* DETALLE DE NUEVOS INSERTADOS */}
+                  {newInsertCount > 0 && (
+                    <li className="flex items-start gap-3">
+                      <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full mt-0.5">
+                        <FaPlus className="w-3 h-3" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-800 text-lg block leading-none">
+                          {newInsertCount}
+                        </span>
+                        <span className="text-slate-500">
+                          Contactos son <strong>NUEVOS</strong> y se añadirán al
+                          dispositivo.
+                        </span>
+                      </div>
+                    </li>
+                  )}
 
-                  {/* 2. IGNORADOS */}
+                  {/* DETALLE DE ACTUALIZACIONES */}
+                  {validContactsToUpload.length - newInsertCount > 0 && (
+                    <li className="flex items-start gap-3">
+                      <div className="bg-amber-100 text-amber-600 p-1.5 rounded-full mt-0.5">
+                        <FaSync className="w-3 h-3" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-800 text-lg block leading-none">
+                          {validContactsToUpload.length - newInsertCount}
+                        </span>
+                        <span className="text-slate-500">
+                          Contactos <strong>existentes</strong> que se
+                          actualizarán.
+                        </span>
+                      </div>
+                    </li>
+                  )}
+
                   {unchangedCount > 0 && (
                     <li className="flex items-start gap-3 opacity-75">
                       <div className="bg-slate-200 text-slate-500 p-1.5 rounded-full mt-0.5">
@@ -502,13 +578,12 @@ export default function ContactTable() {
                           {unchangedCount}
                         </span>
                         <span className="text-slate-500">
-                          Contactos son <strong>idénticos</strong> al sistema.
+                          Contactos ignorados (ya están actualizados).
                         </span>
                       </div>
                     </li>
                   )}
 
-                  {/* 3. ERRORES */}
                   {importErrors.length > 0 && (
                     <li className="flex items-start gap-3">
                       <div className="bg-red-100 text-red-600 p-1.5 rounded-full mt-0.5">
@@ -519,7 +594,7 @@ export default function ContactTable() {
                           {importErrors.length}
                         </span>
                         <span className="text-red-600 font-medium">
-                          Filas contienen errores y NO se procesarán.
+                          Filas con errores (No se procesarán).
                         </span>
                       </div>
                     </li>
@@ -527,7 +602,6 @@ export default function ContactTable() {
                 </ul>
               </div>
 
-              {/* TABLA DE ERRORES */}
               {importErrors.length > 0 && (
                 <div className="border border-red-100 rounded-lg overflow-hidden bg-white">
                   <div className="bg-red-50 px-4 py-2 border-b border-red-100 text-xs font-bold text-red-800 uppercase">
@@ -568,13 +642,12 @@ export default function ContactTable() {
               )}
             </div>
 
-            {/* FOOTER ACCIONES */}
             <div className="p-4 bg-white border-t border-slate-100 flex justify-end gap-3 z-10">
               <button
                 onClick={() => setShowErrorModal(false)}
                 className="px-5 py-2.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition-colors text-sm cursor-pointer"
               >
-                Cancelar Operación
+                Cancelar
               </button>
 
               <button
@@ -590,10 +663,10 @@ export default function ContactTable() {
                 {validContactsToUpload.length > 0 ? (
                   <>
                     <FaSync className={importing ? "animate-spin" : ""} />
-                    Procesar {validContactsToUpload.length} Cambios
+                    Procesar {validContactsToUpload.length} Contactos
                   </>
                 ) : (
-                  "No hay cambios válidos"
+                  "Nada que procesar"
                 )}
               </button>
             </div>
@@ -607,118 +680,128 @@ export default function ContactTable() {
           <Modal
             key="edit-modal"
             onClose={closeEditModal}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-colors scale-100"
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-colors scale-100 relative"
           >
+            {/* Botón Cerrar Flotante */}
+            {!saveSuccess && (
+              <button
+                onClick={closeEditModal}
+                className="absolute top-4 right-4 text-slate-500 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+
             {/* Pantalla de confirmación */}
             {saveSuccess ? (
-              <div className="p-10 flex flex-col items-center justify-center text-center animate-fade-in">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <div className="p-12 flex flex-col items-center justify-center text-center animate-fade-in">
+                <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mb-6 shadow-inner">
                   <FaCheckCircle className="text-5xl text-green-500 animate-bounce" />
                 </div>
-                <h3 className="text-2xl font-bold text-slate-800">
-                  ¡Guardado!
+                <h3 className="text-2xl font-bold text-slate-800 mb-2">
+                  ¡Actualizado!
                 </h3>
-                <p className="text-slate-500 mt-2">
-                  El contacto ha sido actualizado correctamente.
+                <p className="text-slate-500 text-sm">
+                  La información del contacto se ha guardado correctamente.
                 </p>
               </div>
             ) : (
               <>
-                <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
-                  <h3 className="font-bold text-lg flex items-center gap-2">
-                    <FaEdit /> Editar Contacto
+                {/* Cabecera Visual con Avatar */}
+                <div className="bg-white pt-10 px-4 pb-2 flex flex-col items-center justify-center text-slate-800 relative overflow-hidden">
+                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-blue-100">
+                    <UserRoundPen className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <h3 className="relative z-10 font-bold text-lg text-center max-w-xs truncate">
+                    {editForm.newName || "Sin Nombre"}
                   </h3>
-                  <button
-                    onClick={closeEditModal}
-                    className="hover:bg-blue-700 p-1 rounded-full transition-colors cursor-pointer"
-                  >
-                    <FaTimes />
-                  </button>
+                  <p className="relative z-10 text-slate-500 text-xs mt-1 font-mono px-3 py-1 rounded-full backdrop-blur-sm">
+                    ID: {editingContact.ID_Contacto}
+                  </p>
                 </div>
 
-                <div className="p-6 flex flex-col gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                      Nombre
+                {/* Formulario */}
+                <div className="p-8 flex flex-col gap-6">
+                  {/* Input Nombre */}
+                  <div className="relative group">
+                    <label className="absolute -top-2.5 left-3 bg-white px-2 text-xs font-bold text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                      Nombre Completo
                     </label>
                     <input
                       type="text"
-                      className={`w-full mt-1 p-3 border rounded-lg focus:ring-2 outline-none transition-colors duration-200
-                            ${editForm.newName.trim() === "" ? "border-slate-300" : "border-slate-300 focus:ring-blue-500"}`}
+                      className={`w-full p-4 bg-slate-50 border-2 rounded-xl outline-none transition-all font-medium text-slate-700
+                        ${
+                          editForm.newName.trim() === ""
+                            ? "border-slate-200 focus:border-red-300 bg-red-50/10"
+                            : "border-slate-100 focus:border-blue-500 focus:bg-white"
+                        }`}
                       value={editForm.newName}
                       onChange={(e) =>
                         setEditForm({ ...editForm, newName: e.target.value })
                       }
+                      placeholder="Ej. Juan Pérez"
                     />
-
                     {formErrors.name && (
-                      <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                      <p className="text-red-500 text-xs mt-2 flex items-center gap-1 ml-1 animate-pulse">
                         <FaExclamationTriangle /> {formErrors.name}
                       </p>
                     )}
                   </div>
 
-                  <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                      Teléfono (10 Dígitos)
+                  {/* Input Teléfono */}
+                  <div className="relative group">
+                    <label className="absolute -top-2.5 left-3 bg-white px-2 text-xs font-bold text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                      Teléfono Móvil
                     </label>
                     <input
-                      type="text"
-                      placeholder="*** *** ****"
-                      className={`w-full mt-1 p-3 border rounded-lg focus:ring-2 outline-none transition-colors duration-200 font-mono text-lg
-                            ${cleanPhoneNumber(editForm.newPhone).length < 10 ? "border-slate-300 focus:ring-orange-200" : "border-green-300 focus:ring-green-500"}`}
+                      type="tel"
+                      maxLength={14}
+                      placeholder="000 000 0000"
+                      className={`w-full p-4 bg-slate-50 border-2 rounded-xl outline-none transition-all font-mono text-lg tracking-wide text-slate-700
+                        ${
+                          cleanPhoneNumber(editForm.newPhone).length < 7
+                            ? "border-slate-200 focus:border-orange-300"
+                            : "border-slate-100 focus:border-green-500 focus:bg-white"
+                        }`}
                       value={editForm.newPhone}
                       onChange={handlePhoneChange}
                     />
-                    <p className="text-xs text-slate-400 mt-1 text-right">
-                      {cleanPhoneNumber(editForm.newPhone).length} / 10 dígitos
-                    </p>
-
-                    {formErrors.phone && (
-                      <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                        <FaExclamationTriangle /> {formErrors.phone}
+                    <div className="flex justify-between mt-2 px-1">
+                      {formErrors.phone ? (
+                        <p className="text-red-500 text-xs flex items-center gap-1 animate-pulse">
+                          <FaExclamationTriangle /> {formErrors.phone}
+                        </p>
+                      ) : (
+                        <span></span>
+                      )}
+                      <p className="text-[11px] font-bold text-slate-400">
+                        {cleanPhoneNumber(editForm.newPhone).length}/10 Digitos
                       </p>
-                    )}
-                  </div>
-
-                  <div className="bg-slate-50 p-3 rounded-lg text-xs text-slate-500 font-mono border border-slate-100">
-                    ID Sistema: {editingContact.ID_Contacto} <br />
-                    ID Tel: {editingContact.ID_Telefono}
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
-                  <button
-                    onClick={closeEditModal}
-                    className="px-4 py-2 text-slate-600 border border-slate-300 font-medium hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </button>
-
+                {/* Footer de Acción */}
+                <div className="p-6 pt-2 pb-8 flex gap-4 justify-center">
                   <button
                     onClick={handleSaveContact}
                     disabled={saving || !isFormValid() || !hasChanges()}
-                    className={`px-6 py-2 font-medium rounded-lg transition-colors flex items-center gap-2 
+                    className={`w-full py-4 rounded-xl font-bold text-white text-sm flex justify-center items-center gap-2 shadow-lg transition-all transform active:scale-[0.98]
                       ${
                         saving || !isFormValid() || !hasChanges()
-                          ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                          : "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                          ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                          : "bg-blue-600 text-white hover:bg-blue-700 shadow-blue-500/30 hover:shadow-blue-500/40"
                       }`}
-                    title={
-                      !hasChanges()
-                        ? "No has realizado ningún cambio"
-                        : !isFormValid()
-                          ? "Completa 10 dígitos para guardar"
-                          : "Guardar Cambios"
-                    }
                   >
                     {saving ? (
-                      <FaSpinner className="animate-spin" />
+                      <>
+                        <FaSpinner className="animate-spin" /> Guardando...
+                      </>
                     ) : (
-                      <FaSave />
+                      <>
+                        <FaSave /> Guardar Cambios
+                      </>
                     )}
-                    {saving ? "Guardando..." : "Guardar Cambios"}
                   </button>
                 </div>
               </>
@@ -784,21 +867,44 @@ export default function ContactTable() {
       </AnimatePresence>
 
       {importing && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-8 backdrop-blur-md text-white">
-          <FaSpinner className="text-6xl animate-spin mb-6 text-blue-400" />
-          <h2 className="text-2xl font-bold">Importando Contactos...</h2>
-          <p className="text-slate-300 mt-2 text-center max-w-md">
-            No desconectes el dispositivo. Verificando y actualizando registros.
-          </p>
-          <div className="w-full max-w-lg bg-slate-700 rounded-full h-4 mt-8 overflow-hidden">
-            <div
-              className="bg-blue-500 h-full transition-all duration-300"
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
-            ></div>
-          </div>
-          <p className="mt-4 font-mono text-xl">
-            {progress.current} / {progress.total}
-          </p>
+        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-8 backdrop-blur-md text-white animate-fade-in">
+          {!importSuccess ? (
+            /* VISTA DE CARGA (SPINNER Y BARRA) */
+            <>
+              <FaSpinner className="text-6xl animate-spin mb-6 text-blue-400" />
+              <h2 className="text-2xl font-bold">Sincronizando...</h2>
+              <p className="text-slate-300 mt-2 text-center max-w-md">
+                No desconectes el dispositivo.
+                <br />
+                Procesando registro {progress.current} de {progress.total}
+              </p>
+
+              <div className="w-full max-w-lg bg-slate-700 rounded-full h-4 mt-8 overflow-hidden border border-slate-600">
+                <div
+                  className="bg-blue-500 h-full transition-all duration-300 ease-out"
+                  style={{
+                    width: `${(progress.current / progress.total) * 100}%`,
+                  }}
+                ></div>
+              </div>
+              <p className="mt-4 font-mono text-xl">
+                {Math.round((progress.current / progress.total) * 100)}%
+              </p>
+            </>
+          ) : (
+            /* VISTA DE ÉXITO */
+            <div className="flex flex-col items-center animate-scale-in">
+              <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_20px_rgba(34,197,94,0.6)]">
+                <FaCheckCircle className="text-5xl text-white" />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-2">
+                ¡Sincronización Completa!
+              </h2>
+              <p className="text-slate-300 text-lg">
+                Se actualizaron {progress.total} contactos correctamente.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -807,11 +913,11 @@ export default function ContactTable() {
         <div className="flex w-full lg:w-1/2 gap-4">
           {/* Input de Búsqueda */}
           <div className="relative w-full group">
-            <FaSearch className="absolute left-3 top-3.5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+            <FaSearch className="absolute left-3 top-3 text-slate-400 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
             <input
               type="text"
               placeholder="Buscar por nombre o numero..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -819,13 +925,13 @@ export default function ContactTable() {
 
           {/* Dropdown de Filtros */}
           <div className="relative min-w-[180px]">
-            <div className="absolute left-3 top-4 text-slate-500 pointer-events-none text-sm">
+            <div className="absolute left-3 top-3 text-slate-500 pointer-events-none text-sm">
               <FaFilter />
             </div>
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className={`w-full pl-4 indent-6 pr-8 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm appearance-none cursor-pointer font-medium
+              className={`w-full pl-4 indent-6 pr-8 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm appearance-none cursor-pointer font-medium
                 ${filterType !== "all" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-slate-50 border-slate-200 text-slate-600"}
               `}
             >
@@ -835,7 +941,7 @@ export default function ContactTable() {
               <option value="clean-names">Nombres Sin Números</option>
             </select>
 
-            <div className="absolute right-3 top-4.5 pointer-events-none text-slate-400 text-xs">
+            <div className="absolute right-3 top-3.5 pointer-events-none text-slate-400 text-xs">
               <FaChevronDown />
             </div>
           </div>
@@ -853,23 +959,23 @@ export default function ContactTable() {
           <button
             onClick={fetchContacts}
             disabled={loading}
-            className="flex items-center cursor-pointer gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-70 text-sm font-medium active:scale-95"
+            className="flex items-center cursor-pointer gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-70 text-sm font-medium active:scale-95"
           >
-            <FaSync className={loading ? "animate-spin" : ""} />
+            {loading ? <FaSpinner className="animate-spin" /> : <FaSync />}
             {loading ? "Leyendo..." : "Sincronizar"}
           </button>
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={importing || contacts.length === 0}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg transition-all shadow-sm text-sm font-medium active:scale-95
+            disabled={importing || !hasSynced}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all shadow-sm text-sm font-medium active:scale-95
             ${
-              importing || contacts.length === 0
+              importing || !hasSynced
                 ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
                 : "bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
             }`}
             title={
-              contacts.length === 0
+              !hasSynced
                 ? "Primero debes sincronizar los contactos"
                 : "Importar archivo Excel"
             }
@@ -880,7 +986,7 @@ export default function ContactTable() {
 
           <button
             onClick={downloadExcel}
-            className="flex items-center cursor-pointer gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium active:scale-95"
+            className="flex items-center cursor-pointer gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium active:scale-95"
           >
             <FaFileExcel />
             Descargar Excel
@@ -938,12 +1044,28 @@ export default function ContactTable() {
                 </div>
               </div>
             ))
+          ) : loading ? (
+            <div className="text-center py-10">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto">
+                <FaSpinner className="text-4xl text-blue-500 animate-spin mx-auto mb-4 opacity-70" />
+              </div>
+              <p className="text-slate-600 font-medium mb-1 animate-pulse">
+                Escaneando contactos...
+              </p>
+              <p className="text-sm text-slate-400 max-w-md mx-auto animate-pulse">
+                Esto puede tomar unos segundos.
+              </p>
+            </div>
           ) : (
-            <div className="p-12 text-center text-slate-400 flex flex-col items-center">
-              <FaSearch className="text-4xl mb-4 text-slate-200" />
-              {contacts.length === 0
+            <div className="text-sm p-12 text-center text-slate-400 flex flex-col items-center">
+              <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FaSearch className="text-4xl text-slate-300" />
+              </div>
+              {!hasSynced
                 ? 'Presiona "Sincronizar" para cargar la lista desde el teléfono.'
-                : "No se encontraron contactos con ese criterio."}
+                : contacts.length === 0
+                  ? "El dispositivo no tiene contactos. Puedes importar un Excel ahora."
+                  : "No se encontraron contactos con ese criterio."}
             </div>
           )}
         </div>

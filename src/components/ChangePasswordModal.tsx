@@ -1,9 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from "react";
-import { Lock, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  KeyRound,
+  X,
+  Check,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { FaTimes } from "react-icons/fa";
+import { FaSpinner } from "react-icons/fa";
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -14,15 +22,20 @@ export default function ChangePassword({
   isOpen,
   onClose,
 }: ChangePasswordModalProps) {
-  const { changePassword } = useAuth();
+  const { changePassword, user } = useAuth();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Validaciones en tiempo real
+  const hasMinLength = newPassword.length >= 6;
+  const hasNoSpaces = !/\s/.test(newPassword) && newPassword.length > 0;
+  const passwordsMatch =
+    newPassword === confirmPassword && newPassword.length > 0;
 
   useEffect(() => {
     if (isOpen) {
@@ -38,26 +51,15 @@ export default function ChangePassword({
     e: React.ChangeEvent<HTMLInputElement>,
     setter: React.Dispatch<React.SetStateAction<string>>,
   ) => {
-    const cleanValue = e.target.value.replace(/\s/g, "");
-    setter(cleanValue);
+    setter(e.target.value);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (/\s/.test(newPassword)) {
-      setError("La contraseña no puede contener espacios en blanco.");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("Las contraseñas no coinciden.");
+    if (!hasMinLength || !hasNoSpaces || !passwordsMatch) {
+      setError("Por favor, cumple con todos los requisitos de seguridad.");
       return;
     }
 
@@ -68,15 +70,15 @@ export default function ChangePassword({
       setSuccess(true);
       setTimeout(() => {
         onClose();
-      }, 2000);
+      }, 2500);
     } catch (err: any) {
       console.error(err);
       if (err.code === "auth/requires-recent-login") {
         setError(
-          "Por seguridad, debes cerrar sesión y volver a entrar antes de cambiar tu contraseña.",
+          "Por seguridad, cierra sesión y vuelve a entrar para continuar.",
         );
       } else {
-        setError("Error al actualizar la contraseña. Inténtalo de nuevo.");
+        setError("No se pudo actualizar la contraseña. Inténtalo más tarde.");
       }
     } finally {
       setLoading(false);
@@ -86,99 +88,98 @@ export default function ChangePassword({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 pt-10">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop con desenfoque elegante */}
           <motion.div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
             onClick={onClose}
           />
 
-          {/* TARJETA DEL MODAL */}
+          {/* Tarjeta Modal "Security Style" */}
           <motion.div
-            className="bg-white rounded-lg shadow-2xl w-full max-w-md overflow-hidden relative z-10"
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden"
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="bg-blue-600 p-4 flex justify-between items-center text-white">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <Lock className="h-5 w-5" /> Cambiar Contraseña
-              </h3>
-              <button
-                onClick={onClose}
-                className="hover:bg-blue-700 p-1 rounded-full transition-colors cursor-pointer"
-              >
-                <FaTimes />
-              </button>
-            </div>
+            {/* Botón Cerrar Flotante */}
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors z-10"
+            >
+              <X className="w-5 h-5" />
+            </button>
 
-            {/* Body */}
-            <div className="p-6">
+            {/* Contenido Principal */}
+            <div className="px-8 pt-10 pb-8">
               {success ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center justify-center py-8 text-center"
-                >
-                  <div className="bg-green-100 p-4 rounded-full mb-4">
-                    <CheckCircle className="w-12 h-12 text-green-600" />
-                  </div>
-                  <h4 className="text-xl font-bold text-gray-800">
-                    ¡Contraseña Actualizada!
-                  </h4>
-                  <p className="text-gray-600 mt-2">
-                    Tu contraseña se ha cambiado correctamente.
+                <div className="flex flex-col items-center text-center py-6">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mb-6"
+                  >
+                    <ShieldCheck className="w-12 h-12 text-green-500" />
+                  </motion.div>
+                  <h3 className="text-2xl font-bold text-slate-800 mb-2">
+                    ¡Protección Actualizada!
+                  </h3>
+                  <p className="text-slate-500 text-sm">
+                    Tu contraseña ha sido modificada exitosamente.
                   </p>
-                </motion.div>
+                </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* Mensaje de Error */}
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      className="bg-red-50 border border-red-100 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2"
-                    >
-                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                      <span>{error}</span>
-                    </motion.div>
-                  )}
-
-                  {/* Nueva Contraseña */}
-                  <div>
-                    <div className="pb-5">
-                      <p className="text-sm font-semibold text-gray-700 tracking-wider mb-0.5">
-                        Usuario
-                      </p>
-                      <p
-                        className="text-sm font-bold text-blue-300 truncate bg-blue-50 border border-blue-300 rounded-lg px-4 py-2.5"
-                        title={user?.email || ""}
-                      >
-                        {user?.email || ""}
-                      </p>
+                <form onSubmit={handleSubmit}>
+                  {/* Icono Cabecera */}
+                  <div className="flex flex-col items-center mb-8">
+                    <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-blue-100">
+                      <KeyRound className="w-8 h-8 text-blue-600" />
                     </div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <h2 className="text-xl font-bold text-slate-800">
                       Nueva Contraseña
-                    </label>
-                    <div className="relative">
+                    </h2>
+                    <p className="flex text-xs text-slate-400 mt-1 gap-1">
+                      Usuario:
+                      <p className="text-slate-600">{user?.email}</p>
+                    </p>
+                  </div>
+
+                  {/* Mensaje Error */}
+                  <AnimatePresence>
+                    {error && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="bg-red-50 text-red-600 text-xs p-3 rounded-xl mb-4 border border-red-100 font-medium text-center"
+                      >
+                        {error}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="space-y-4">
+                    {/* Input Nueva */}
+                    <div className="relative group">
+                      <div className="absolute left-3 top-3 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                        <Lock className="w-5 h-5" />
+                      </div>
                       <input
                         type={showPassword ? "text" : "password"}
-                        className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="Mínimo 6 caracteres"
+                        className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-700 placeholder:text-slate-400"
+                        placeholder="Nueva contraseña"
                         value={newPassword}
                         onChange={(e) => handleInputChange(e, setNewPassword)}
-                        required
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
                       >
                         {showPassword ? (
                           <EyeOff className="w-5 h-5" />
@@ -187,47 +188,67 @@ export default function ChangePassword({
                         )}
                       </button>
                     </div>
+
+                    {/* Input Confirmar */}
+                    <div className="relative group">
+                      <div className="absolute left-3 top-3 text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-700 placeholder:text-slate-400"
+                        placeholder="Confirmar contraseña"
+                        value={confirmPassword}
+                        onChange={(e) =>
+                          handleInputChange(e, setConfirmPassword)
+                        }
+                      />
+                    </div>
                   </div>
 
-                  {/* Confirmar Contraseña */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Confirmar Contraseña
-                    </label>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="Repite la contraseña"
-                      value={confirmPassword}
-                      onChange={(e) => handleInputChange(e, setConfirmPassword)}
-                      required
+                  {/* Validadores Visuales */}
+                  <div className="mt-6 space-y-2">
+                    <RequirementItem
+                      met={hasMinLength}
+                      label="Mínimo 6 caracteres"
+                    />
+                    <RequirementItem
+                      met={hasNoSpaces}
+                      label="Sin espacios en blanco"
+                    />
+                    <RequirementItem
+                      met={passwordsMatch}
+                      label="Las contraseñas coinciden"
                     />
                   </div>
 
-                  {/* Botones de Acción */}
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="flex-1 py-2.5 px-4 cursor-pointer border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || !newPassword || !confirmPassword}
-                      className="flex-1 py-2.5 px-4 cursor-pointer bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2"
-                    >
-                      {loading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Guardando...
-                        </>
-                      ) : (
-                        "Guardar Cambios"
-                      )}
-                    </button>
-                  </div>
+                  {/* Botón Acción */}
+                  <button
+                    type="submit"
+                    disabled={
+                      loading ||
+                      !hasMinLength ||
+                      !hasNoSpaces ||
+                      !passwordsMatch
+                    }
+                    className={`w-full mt-8 py-3.5 rounded-xl text-sm font-bold text-white shadow-lg flex justify-center items-center gap-2 transition-all transform active:scale-[0.98]
+                      ${
+                        loading ||
+                        !hasMinLength ||
+                        !hasNoSpaces ||
+                        !passwordsMatch
+                          ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                          : "bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/25"
+                      }`}
+                  >
+                    {loading ? (
+                      <>
+                        <FaSpinner className="animate-spin" /> Actualizando...
+                      </>
+                    ) : (
+                      "Actualizar Contraseña"
+                    )}
+                  </button>
                 </form>
               )}
             </div>
@@ -237,3 +258,23 @@ export default function ChangePassword({
     </AnimatePresence>
   );
 }
+
+// Subcomponente para los requisitos
+const RequirementItem = ({ met, label }: { met: boolean; label: string }) => (
+  <div
+    className={`flex items-center gap-2 text-xs transition-colors duration-300 ${
+      met ? "text-green-600 font-medium" : "text-slate-400"
+    }`}
+  >
+    <div
+      className={`w-4 h-4 rounded-full flex items-center justify-center border transition-all duration-300 ${
+        met
+          ? "bg-green-500 border-green-500"
+          : "border-slate-300 bg-transparent"
+      }`}
+    >
+      {met && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+    </div>
+    <span>{label}</span>
+  </div>
+);
