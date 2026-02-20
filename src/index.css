@@ -45,6 +45,52 @@ body {
   display: none;
 }
 
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #0f172a;
+  border-radius: 30px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 30px;
+  border: 2px solid #0f172a;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #5f6570 #0f172a;
+}
+
+.instructions-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.instructions-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.instructions-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 20px;
+}
+
+.instructions-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
+.instructions-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
 html {
   scrollbar-width: thin;
   scrollbar-color: #94a3b89c #f1f5f9;

@@ -17,11 +17,15 @@ import {
   FaFilter,
   FaChevronDown,
   FaPlus,
+  FaMobileAlt,
+  FaFolderOpen,
+  FaHandPointUp,
+  FaMobile,
 } from "react-icons/fa";
 import type { Contacto, ApiResponse } from "../types";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
-import { UserRoundPen, X } from "lucide-react";
+import { ArrowBigDownDash, UserRoundPen, X } from "lucide-react";
 
 interface ImportError {
   row: number;
@@ -86,7 +90,6 @@ const Modal = ({
   );
 };
 
-// ACEPTAMOS LA PROP DEVICE NAME
 export default function ContactTable({
   deviceName = "Android",
 }: ContactTableProps) {
@@ -111,9 +114,11 @@ export default function ContactTable({
 
   const [importing, setImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState(false);
+  const [vcfInstructions, setVcfInstructions] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [unchangedCount, setUnchangedCount] = useState(0);
   const [newInsertCount, setNewInsertCount] = useState(0);
+  const [excelDuplicateCount, setExcelDuplicateCount] = useState(0);
 
   const [filterType, setFilterType] = useState("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -231,33 +236,44 @@ export default function ContactTable({
   const validateExcelData = (data: any[]) => {
     const errors: ImportError[] = [];
     const batchOps: any[] = [];
+    const seenInExcel = new Set<string>();
+
     let unchangedCountLocal = 0;
     let newInsertCountLocal = 0;
+    let excelDuplicateCountLocal = 0;
 
     data.forEach((row, index) => {
       const realRowNumber = index + 2;
       const rawPhone = String(row.Telefono || "");
       const cleanPhone = cleanPhoneNumber(rawPhone);
+      const rowName = String(row.Nombre || "").trim();
+      const uniqueKey = `${rowName.toLowerCase()}|${cleanPhone}`;
 
       if (cleanPhone.length !== 10) {
         errors.push({
           row: realRowNumber,
-          name: row.Nombre || "Desconocido",
-          phone: row.Telefono,
+          name: rowName || "Desconocido",
+          phone: rawPhone,
           reason: `Teléfono inválido (${cleanPhone.length} dígitos).`,
         });
         return;
       }
 
-      if (!row.Nombre || String(row.Nombre).trim() === "") {
+      if (!rowName) {
         errors.push({
           row: realRowNumber,
           name: "---",
-          phone: row.Telefono,
+          phone: rawPhone,
           reason: "Nombre vacío.",
         });
         return;
       }
+
+      if (seenInExcel.has(uniqueKey)) {
+        excelDuplicateCountLocal++;
+        return;
+      }
+      seenInExcel.add(uniqueKey);
 
       let existingContact = null;
 
@@ -267,12 +283,24 @@ export default function ContactTable({
         );
       }
 
+      if (!existingContact) {
+        existingContact = contacts.find((c) => {
+          const dbPhone = cleanPhoneNumber(c.Telefono);
+          const dbName = c.Nombre.trim();
+          const isSameFull = dbName === rowName && dbPhone === cleanPhone;
+
+          const isSameNameDifferentPhone =
+            dbName === rowName && dbPhone !== cleanPhone;
+
+          return isSameFull || isSameNameDifferentPhone;
+        });
+      }
+
       if (existingContact) {
-        const originalCleanPhone = cleanPhoneNumber(existingContact.Telefono);
-        if (
-          existingContact.Nombre === row.Nombre &&
-          originalCleanPhone === cleanPhone
-        ) {
+        const dbPhone = cleanPhoneNumber(existingContact.Telefono);
+        const dbName = existingContact.Nombre.trim();
+
+        if (dbName === rowName && dbPhone === cleanPhone) {
           unchangedCountLocal++;
           return;
         }
@@ -281,14 +309,14 @@ export default function ContactTable({
           type: "UPDATE",
           ID_Contacto: existingContact.ID_Contacto,
           ID_Telefono: existingContact.ID_Telefono,
-          Nombre: row.Nombre,
+          Nombre: rowName,
           Telefono: cleanPhone,
         });
       } else {
         newInsertCountLocal++;
         batchOps.push({
           type: "INSERT",
-          Nombre: row.Nombre,
+          Nombre: rowName,
           Telefono: cleanPhone,
         });
       }
@@ -296,28 +324,88 @@ export default function ContactTable({
 
     setUnchangedCount(unchangedCountLocal);
     setNewInsertCount(newInsertCountLocal);
+    setExcelDuplicateCount(excelDuplicateCountLocal);
     setImportErrors(errors);
     setValidContactsToUpload(batchOps);
 
-    if (errors.length > 0 || batchOps.length > 0) {
+    if (
+      errors.length > 0 ||
+      batchOps.length > 0 ||
+      excelDuplicateCountLocal > 0
+    ) {
       setShowErrorModal(true);
     } else {
       toast.info(
-        `Analisis Completado: No hay cambios. ${unchangedCountLocal} contactos ya existen.`,
+        `Análisis: Sin cambios detectados. ${unchangedCountLocal} ya están al día.`,
       );
     }
+  };
+
+  const finishVcfProcess = () => {
+    setImporting(false);
+    setImportSuccess(false);
+    setVcfInstructions(false);
+    fetchContacts();
   };
 
   const startBatchUpdate = async (opsToProcess: any[]) => {
     setShowErrorModal(false);
     setImporting(true);
     setImportSuccess(false);
+    setVcfInstructions(false);
+
     setProgress({ current: 0, total: opsToProcess.length });
 
-    for (let i = 0; i < opsToProcess.length; i++) {
-      const op = opsToProcess[i];
+    const inserts = opsToProcess
+      .filter((op) => op.type === "INSERT")
+      .map((op) => ({
+        newName: op.Nombre,
+        newPhone: op.Telefono,
+      }));
+
+    const updates = opsToProcess.filter((op) => op.type === "UPDATE");
+
+    let vcfUsed = false;
+    let processedCount = 0;
+
+    if (inserts.length > 0) {
       try {
-        if (op.type === "UPDATE") {
+        const response = await axios.post(`${API_URL}/try-vcf-import`, {
+          contacts: inserts,
+        });
+
+        if (response.data.success && response.data.method === "vcf") {
+          vcfUsed = true;
+          processedCount += inserts.length;
+          setProgress({ current: processedCount, total: opsToProcess.length });
+        }
+      } catch (error) {
+        console.warn("No se pudo usar VCF, intentando método manual...", error);
+      }
+    }
+
+    if (!vcfUsed && inserts.length > 0) {
+      for (let i = 0; i < inserts.length; i++) {
+        const op = inserts[i];
+        try {
+          await axios.get(`${API_URL}/add-contact`, {
+            params: {
+              newName: op.newName,
+              newPhone: op.newPhone,
+            },
+          });
+        } catch (error) {
+          console.error(`Error insertando manual ${op.newName}`, error);
+        }
+        processedCount++;
+        setProgress({ current: processedCount, total: opsToProcess.length });
+      }
+    }
+
+    if (updates.length > 0) {
+      for (let i = 0; i < updates.length; i++) {
+        const op = updates[i];
+        try {
           await axios.get(`${API_URL}/update-contact`, {
             params: {
               contactId: op.ID_Contacto,
@@ -326,28 +414,27 @@ export default function ContactTable({
               newPhone: op.Telefono,
             },
           });
-        } else if (op.type === "INSERT") {
-          await axios.get(`${API_URL}/add-contact`, {
-            params: {
-              newName: op.Nombre,
-              newPhone: op.Telefono,
-            },
-          });
+        } catch (error) {
+          console.error(`Error actualizando fila ${i}`, error);
         }
-      } catch (error) {
-        console.error(`Error en fila ${i} (${op.type})`, error);
+        processedCount++;
+        setProgress({ current: processedCount, total: opsToProcess.length });
       }
-      setProgress({ current: i + 1, total: opsToProcess.length });
     }
 
     setImportSuccess(true);
-    toast.success("Importación completada con éxito.");
 
-    setTimeout(() => {
-      setImporting(false);
-      setImportSuccess(false);
-      fetchContacts();
-    }, 2500);
+    if (vcfUsed) {
+      setVcfInstructions(true);
+      toast.info("Acción requerida en el dispositivo.");
+    } else {
+      toast.success("Importación completada con éxito.");
+      setTimeout(() => {
+        setImporting(false);
+        setImportSuccess(false);
+        fetchContacts();
+      }, 2500);
+    }
   };
 
   const openEditModal = (contact: Contacto) => {
@@ -532,18 +619,36 @@ export default function ContactTable({
                   Resumen de Acciones
                 </h4>
                 <ul className="space-y-3 text-sm">
-                  {/* DETALLE DE NUEVOS INSERTADOS */}
+                  {/* DETALLE DE DUPLICADOS EN EL EXCEL */}
+                  {excelDuplicateCount > 0 && (
+                    <li className="flex items-start gap-3">
+                      <div className="bg-orange-100 text-orange-600 p-1.5 rounded-full mt-0.5">
+                        <FaFilter className="w-3 h-3" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-slate-800 text-lg block leading-none">
+                          {excelDuplicateCount}
+                        </span>
+                        <span className="text-slate-500">
+                          Registros <strong>duplicados</strong> dentro del
+                          archivo han sido filtrados automáticamente.
+                        </span>
+                      </div>
+                    </li>
+                  )}
+
+                  {/* DETALLE DE NUEVOS INSERTADOS (DATOS LIMPIOS) */}
                   {newInsertCount > 0 && (
                     <li className="flex items-start gap-3">
                       <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full mt-0.5">
                         <FaPlus className="w-3 h-3" />
                       </div>
                       <div>
-                        <span className="font-bold text-slate-800 text-lg block leading-none">
+                        <span className="font-bold text-blue-700 text-lg block leading-none">
                           {newInsertCount}
                         </span>
                         <span className="text-slate-500">
-                          Contactos son <strong>NUEVOS</strong> y se añadirán al
+                          Contactos <strong>nuevos</strong> se añadirán al
                           dispositivo.
                         </span>
                       </div>
@@ -866,10 +971,99 @@ export default function ContactTable({
         )}
       </AnimatePresence>
 
+      {/* VISTA DE PROGRESO Y CARGA (ESTADO IMPORTING) */}
       {importing && (
         <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-8 backdrop-blur-md text-white animate-fade-in">
-          {!importSuccess ? (
-            /* VISTA DE CARGA (SPINNER Y BARRA) */
+          {/* CASO 1: INSTRUCCIONES MANUALES PARA VCF */}
+          {vcfInstructions ? (
+            <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-scale-in">
+              <div className="bg-blue-600 p-6 text-white text-center">
+                <FaMobileAlt className="text-5xl mx-auto mb-3 animate-pulse" />
+                <h2 className="text-2xl font-bold">Acción Requerida</h2>
+                <p className="text-blue-100 text-sm mt-1">
+                  Complete el proceso en su dispositivo
+                </p>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="flex items-start gap-4">
+                  <div className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-lg">
+                    <FaMobile className="text-base" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-800">
+                      Revisa tu celular
+                    </h4>
+                    <p className="text-slate-500 text-xs">
+                      Se ha abierto la carpeta de <strong>Descargas</strong>{" "}
+                      automáticamente. (Si no, selecciona "Mis Archivos" o
+                      "Administrador de Archivos").
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-lg">
+                    <FaFolderOpen className="text-base" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-800">
+                      Busca el archivo
+                    </h4>
+                    <p className="text-slate-500 text-xs">
+                      Encuentra el archivo llamado: <br />
+                      <code className="bg-slate-100 px-2 py-0.5 rounded text-xs font-mono text-slate-600 border border-slate-300 mt-1 inline-block">
+                        IMPORTAR_CONTACTOS_...vcf
+                      </code>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-lg">
+                    <FaHandPointUp className="text-base" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-800">
+                      Toque para importar
+                    </h4>
+                    <p className="text-slate-500 text-xs">
+                      Seleccione el archivo y confirma la importación si el
+                      sistema lo solicita.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="bg-blue-100 text-blue-600 w-8 h-8 rounded-full flex items-center justify-center shrink-0 font-bold text-lg">
+                    <ArrowBigDownDash className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-800">
+                      Guardar contactos
+                    </h4>
+                    <p className="text-slate-500 text-xs">
+                      Indica el lugar de almacenamiento (Ej. "Teléfono", "SIM" o
+                      "Samsung Account") y confirma la acción.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 border-t border-slate-100 text-center">
+                <button
+                  onClick={finishVcfProcess}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95"
+                >
+                  Listo, ya importé los contactos
+                </button>
+                <p className="text-xs text-slate-400 mt-3">
+                  Al hacer clic, se actualizará la lista en pantalla.
+                </p>
+              </div>
+            </div>
+          ) : !importSuccess ? (
+            /* CASO 2: BARRA DE PROGRESO (CARGANDO) */
             <>
               <FaSpinner className="text-6xl animate-spin mb-6 text-blue-400" />
               <h2 className="text-2xl font-bold">Sincronizando...</h2>
@@ -892,7 +1086,7 @@ export default function ContactTable({
               </p>
             </>
           ) : (
-            /* VISTA DE ÉXITO */
+            /* CASO 3: ÉXITO AUTOMÁTICO (SOLO PARA MÉTODO MANUAL) */
             <div className="flex flex-col items-center animate-scale-in">
               <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_20px_rgba(34,197,94,0.6)]">
                 <FaCheckCircle className="text-5xl text-white" />
@@ -910,7 +1104,7 @@ export default function ContactTable({
 
       {/* BARRA DE HERRAMIENTAS (Búsqueda y Filtros) */}
       <div className="flex flex-col lg:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 gap-4">
-        <div className="flex w-full lg:w-1/2 gap-4">
+        <div className="flex w-full lg:w-1/2 gap-2">
           {/* Input de Búsqueda */}
           <div className="relative w-full group">
             <FaSearch className="absolute left-3 top-3 text-slate-400 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
@@ -959,7 +1153,7 @@ export default function ContactTable({
           <button
             onClick={fetchContacts}
             disabled={loading}
-            className="flex items-center cursor-pointer gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-70 text-sm font-medium active:scale-95"
+            className="flex items-center cursor-pointer gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-70 text-sm font-medium active:scale-95"
           >
             {loading ? <FaSpinner className="animate-spin" /> : <FaSync />}
             {loading ? "Leyendo..." : "Sincronizar"}
@@ -968,7 +1162,7 @@ export default function ContactTable({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing || !hasSynced}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all shadow-sm text-sm font-medium active:scale-95
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all shadow-sm text-sm font-medium active:scale-95
             ${
               importing || !hasSynced
                 ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
@@ -986,7 +1180,7 @@ export default function ContactTable({
 
           <button
             onClick={downloadExcel}
-            className="flex items-center cursor-pointer gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium active:scale-95"
+            className="flex items-center cursor-pointer gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-sm text-sm font-medium active:scale-95"
           >
             <FaFileExcel />
             Descargar Excel
@@ -1057,15 +1251,52 @@ export default function ContactTable({
               </p>
             </div>
           ) : (
-            <div className="text-sm p-12 text-center text-slate-400 flex flex-col items-center">
-              <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FaSearch className="text-4xl text-slate-300" />
-              </div>
-              {!hasSynced
-                ? 'Presiona "Sincronizar" para cargar la lista desde el teléfono.'
-                : contacts.length === 0
-                  ? "El dispositivo no tiene contactos. Puedes importar un Excel ahora."
-                  : "No se encontraron contactos con ese criterio."}
+            <div className="text-sm p-12 text-center text-slate-500 flex flex-col items-center">
+              {!hasSynced ? (
+                <>
+                  <div className="mb-8">
+                    <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FaSearch className="text-4xl text-slate-400" />
+                    </div>
+                    <p className="text-slate-600 font-medium mb-1">
+                      Sin datos para mostrar
+                    </p>
+                    <p>
+                      Presiona "Sincronizar" para cargar la lista desde el
+                      teléfono.
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchContacts}
+                    disabled={loading}
+                    className="flex items-center cursor-pointer rounded-full gap-2 px-8 py-3 bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-sm disabled:opacity-70 text-sm font-medium active:scale-95"
+                  >
+                    {loading ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      <FaSync />
+                    )}
+                    {loading ? "Leyendo..." : "Sincronizar"}
+                  </button>
+                </>
+              ) : contacts.length === 0 ? (
+                <>
+                  <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FaFileUpload className="text-4xl text-slate-400" />
+                  </div>
+                  <p>
+                    El dispositivo no tiene contactos. Puedes importar un Excel
+                    ahora.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="bg-slate-1000 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FaFilter className="text-4xl text-slate-400" />
+                  </div>
+                  <p>No se encontraron contactos con ese criterio.</p>
+                </>
+              )}
             </div>
           )}
         </div>

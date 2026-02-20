@@ -169,9 +169,9 @@ export default function MediaManager({
       <div className="p-6 flex-1 h-full overflow-y-auto relative">
         {/* ESTADO INICIAL */}
         {!hasScanned && !loading && (
-          <div className="h-full flex flex-col justify-center items-center text-slate-400 text-center">
-            <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FaImages className="text-4xl text-slate-300" />
+          <div className="h-full flex flex-col justify-center items-center text-slate-500 text-center">
+            <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FaImages className="text-4xl text-slate-400" />
             </div>
             <p className="text-slate-600 font-medium mb-1">
               Sin datos para mostrar
@@ -217,11 +217,11 @@ export default function MediaManager({
             exit={{ scale: 0.95, opacity: 0 }}
             className="h-full flex flex-col justify-center items-center text-center text-slate-400"
           >
-            <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FaBoxOpen className="text-4xl text-slate-300" />
+            <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FaBoxOpen className="text-4xl text-slate-400" />
             </div>
             <p className="text-slate-600 font-medium mb-1">Dispositivo vacío</p>
-            <p className="text-sm max-w-md mx-auto text-slate-400">
+            <p className="text-sm max-w-md mx-auto text-slate-500">
               No se encontraron fotos ni videos en las carpetas escaneadas.
             </p>
           </motion.div>

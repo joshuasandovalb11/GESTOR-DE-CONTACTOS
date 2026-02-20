@@ -183,40 +183,131 @@ function App() {
                       : "Conectar Dispositivo"}
                 </button>
 
-                {/* Guía Rápida */}
+                {/* Guía Detallada para el Usuario */}
                 {!connectionSuccess && !loading && (
-                  <div className="mt-8 pt-8 border-t border-slate-100">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">
-                      Requisitos previos
+                  <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col min-h-0">
+                    {connectionError && (
+                      <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white">
+                          <Smartphone size={16} />
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-blue-700 font-medium leading-tight">
+                            ¿El dispositivo esta configurado? Asegúrate de que
+                            la pantalla esté encendida y desbloqueada, luego
+                            vuelve a intentar para ver el mensaje de
+                            autorización.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                      Instrucciones de configuración
                     </p>
-                    <ul className="space-y-3">
-                      <li className="flex items-center gap-3 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          1
+
+                    {/* Contenedor con instrucciones */}
+                    <div className="instructions-scroll overflow-y-auto max-h-[280px] pr-2">
+                      <div className="grid grid-cols-1 gap-3">
+                        {/* Paso 1 */}
+                        <div className="flex items-start gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                          <div className="shrink-0 w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">
+                            1
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-700">
+                              Conexión USB
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Usa un{" "}
+                              <span className="font-bold text-blue-600">
+                                cable USB
+                              </span>{" "}
+                              de buena calidad conectado directamente de la PC
+                              al celular.
+                            </p>
+                          </div>
                         </div>
-                        <span>Conectar cable USB al PC</span>
-                      </li>
-                      <li className="flex items-center gap-3 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          2
+
+                        {/* Paso 2 */}
+                        <div className="flex items-start gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                          <div className="shrink-0 w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">
+                            2
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-700">
+                              Modo Desarrollador
+                            </p>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Ve a{" "}
+                              <span className="font-bold italic">
+                                Ajustes &gt; Acerca del teléfono &gt;
+                                Información de software
+                              </span>{" "}
+                              y presiona{" "}
+                              <span className="text-blue-600 font-bold">
+                                7 veces seguidas
+                              </span>{" "}
+                              sobre{" "}
+                              <span className="font-bold italic">
+                                "Número de compilación"
+                              </span>{" "}
+                              hasta que diga "Ya eres desarrollador".
+                            </p>
+                          </div>
                         </div>
-                        <span>
-                          Activar{" "}
-                          <span className="font-bold">
-                            Opciones de Desarrollador
-                          </span>
-                        </span>
-                      </li>
-                      <li className="flex items-center gap-3 text-sm text-slate-600">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          3
+
+                        {/* Paso 3 */}
+                        <div className="flex items-start gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-colors">
+                          <div className="shrink-0 w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600">
+                            3
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-700">
+                              Activar Depuración
+                            </p>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Regresa a{" "}
+                              <span className="font-bold italic">Ajustes</span>,
+                              entra a{" "}
+                              <span className="font-bold italic">
+                                Opciones de desarrollador
+                              </span>
+                              , busca y activa la opción{" "}
+                              <span className="text-blue-600 font-bold">
+                                Depuración USB
+                              </span>
+                              .
+                            </p>
+                          </div>
                         </div>
-                        <span>
-                          Habilitar{" "}
-                          <span className="font-bold">Depuración USB</span>
-                        </span>
-                      </li>
-                    </ul>
+
+                        {/* Paso 4 */}
+                        <div className="flex items-start gap-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-100">
+                          <div className="shrink-0 w-6 h-6 rounded-full bg-amber-200 flex items-center justify-center text-sm font-bold text-amber-700">
+                            4
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-amber-800">
+                              Autorizar Equipo
+                            </p>
+                            <p className="text-xs text-amber-700 leading-relaxed">
+                              Da clic en el boton azul de arriba. Al intentar
+                              conectar, mira tu celular y acepta el mensaje de{" "}
+                              <span className="font-bold italic">
+                                "¿Permitir depuración USB?"
+                              </span>{" "}
+                              y marca la opción{" "}
+                              <span className="font-bold italic">
+                                "Permitir siempre"
+                              </span>
+                              .
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

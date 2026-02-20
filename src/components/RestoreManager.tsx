@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useState, type JSX, useRef } from "react";
 import axios from "axios";
 import {
   FaTrash,
@@ -18,6 +19,7 @@ import {
   FaArrowLeft,
   FaExclamationTriangle,
   FaTimes,
+  FaPlay,
 } from "react-icons/fa";
 import { AnimatePresence, motion } from "framer-motion";
 import { ListTodo, Megaphone, ScanSearch } from "lucide-react";
@@ -54,6 +56,10 @@ export default function RestoreManager() {
   const [logs, setLogs] = useState<string[]>([]);
   const [hasScanned, setHasScanned] = useState(false);
   const [appSearchTerm, setAppSearchTerm] = useState("");
+  const [isFactoryResetModalOpen, setIsFactoryResetModalOpen] = useState(false);
+
+  // Estado para la barra de progreso
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const [targets, setTargets] = useState({
     contacts: false,
@@ -65,6 +71,14 @@ export default function RestoreManager() {
   });
 
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll para los logs
+  useEffect(() => {
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
 
   const scanDevice = async () => {
     setLoading(true);
@@ -112,32 +126,101 @@ export default function RestoreManager() {
     setStep("review");
   };
 
-  const executeCleanup = async () => {
+  const handleExecuteFactoryReset = async () => {
+    setIsFactoryResetModalOpen(false);
     setStep("processing");
-    setLogs([]);
+    setLogs([
+      "Iniciando Restablecimiento de Fábrica...",
+      "Enviando comando MASTER_CLEAR...",
+    ]);
 
     try {
-      const res = await axios.post(`${API_URL}/perform-cleanup`, {
-        targets,
-        appsToDelete: selectedApps,
-      });
-
+      const res = await axios.post(`${API_URL}/factory-reset`);
       if (res.data.success) {
-        setLogs(res.data.logs);
+        setLogs((prev) => [
+          ...prev,
+          "✅ Comando enviado con éxito.",
+          "📱 El dispositivo se reiniciará en breve.",
+        ]);
         setStep("results");
-
-        setTargets({
-          contacts: false,
-          calls: false,
-          sms: false,
-          camera: false,
-          whatsapp: false,
-          downloads: false,
-        });
-        setSelectedApps([]);
+        toast.success("El dispositivo se está restableciendo.");
       }
-    } catch (error) {
-      toast.error("Error durante la limpieza: " + error);
+    } catch (error: any) {
+      setLogs((prev) => [...prev, "❌ ERROR: " + error.message]);
+      setStep("selection");
+      toast.error("Falló el restablecimiento de fábrica.");
+    }
+  };
+
+  /**
+   * FUNCIÓN PRINCIPAL DE LIMPIEZA PARALELA
+   */
+  const executeCleanup = async () => {
+    setStep("processing");
+    setLogs(["🚀 Iniciando motor de limpieza..."]);
+
+    const categoriesCount = Object.values(targets).filter(Boolean).length;
+    const totalItems = categoriesCount + selectedApps.length;
+
+    setProgress({ current: 0, total: totalItems });
+    let currentProgress = 0;
+
+    try {
+      if (categoriesCount > 0) {
+        setLogs((prev) => [
+          ...prev,
+          "📂 Borrando carpetas y bases de datos seleccionadas...",
+        ]);
+        const resData = await axios.post(`${API_URL}/perform-cleanup`, {
+          targets: targets,
+          appsToDelete: [],
+        });
+
+        if (resData.data.success) {
+          setLogs((prev) => [...prev, ...resData.data.logs]);
+          currentProgress += categoriesCount;
+          setProgress({ current: currentProgress, total: totalItems });
+        }
+      }
+
+      if (selectedApps.length > 0) {
+        setLogs((prev) => [
+          ...prev,
+          `📦 Desinstalando ${selectedApps.length} aplicaciones...`,
+        ]);
+
+        for (const appPkg of selectedApps) {
+          const appInfo = report?.apps?.find((a) => a.packageName === appPkg);
+          const label = appInfo?.label || appPkg;
+
+          try {
+            const resApp = await axios.post(`${API_URL}/perform-cleanup`, {
+              targets: {},
+              appsToDelete: [appPkg],
+            });
+
+            if (resApp.data.success) {
+              setLogs((prev) => [
+                ...prev,
+                `🗑️ Desinstalada con éxito: ${label}`,
+              ]);
+            }
+          } catch (err: any) {
+            setLogs((prev) => [...prev, `❌ Error al desinstalar: ${label}`]);
+          }
+
+          currentProgress++;
+          setProgress({ current: currentProgress, total: totalItems });
+        }
+      }
+
+      setTimeout(() => {
+        setStep("results");
+        toast.success("Limpieza completada.");
+      }, 800);
+    } catch (error: any) {
+      console.error(error);
+      setLogs((prev) => [...prev, "❌ ERROR: " + error.message]);
       setStep("review");
     }
   };
@@ -233,6 +316,12 @@ export default function RestoreManager() {
     return summary;
   };
 
+  // Calcular porcentaje para la barra
+  const percentage =
+    progress.total > 0
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0;
+
   return (
     <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden animate-fade-in-up relative h-full flex flex-col">
       {/* HEADER DINÁMICO */}
@@ -252,8 +341,8 @@ export default function RestoreManager() {
             )}
             {step === "processing" && (
               <>
-                <FaSpinner className="text-blue-500 animate-spin" />{" "}
-                Procesando...
+                <FaPlay className="text-blue-500 animate-pulse" /> Ejecutando
+                limpieza...
               </>
             )}
             {step === "results" && (
@@ -266,34 +355,44 @@ export default function RestoreManager() {
             {step === "selection" &&
               "Selecciona los elementos que deseas eliminar."}
             {step === "review" && "Revisa cuidadosamente antes de continuar."}
-            {step === "processing" &&
-              "Por favor espera, no desconectes el dispositivo."}
+            {step === "processing" && "Operaciones ejecutándose en paralelo."}
             {step === "results" && "Resumen de las acciones realizadas."}
           </p>
         </div>
 
-        {step === "selection" && (
-          <button
-            onClick={scanDevice}
-            disabled={loading}
-            className="text-sm cursor-pointer font-medium bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-          >
-            {loading ? (
-              <FaSpinner className="animate-spin" />
-            ) : (
-              <ScanSearch className="h-4 w-4" />
-            )}
-            {hasScanned ? "Actualizar Lista" : "Analizar Dispositivo"}
-          </button>
-        )}
+        <div className="flex gap-4">
+          {step === "selection" && hasScanned && (
+            <button
+              onClick={() => setIsFactoryResetModalOpen(true)}
+              className="text-sm cursor-pointer font-bold bg-red-600 text-white hover:bg-red-700 px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+            >
+              <FaExclamationTriangle className="h-3 w-3" /> Restaurar de Fábrica
+            </button>
+          )}
+
+          {step === "selection" && (
+            <button
+              onClick={scanDevice}
+              disabled={loading}
+              className="text-sm cursor-pointer font-medium bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+            >
+              {loading ? (
+                <FaSpinner className="animate-spin" />
+              ) : (
+                <ScanSearch className="h-4 w-4" />
+              )}
+              {hasScanned ? "Actualizar Lista" : "Analizar Dispositivo"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="p-6 flex-1 h-full overflow-y-auto relative">
         {/* VISTA 1: ESTADO INICIAL / LOADING */}
         {!hasScanned && !loading && step === "selection" && (
-          <div className="h-full flex flex-col justify-center items-center text-center text-slate-400">
-            <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mb-4">
-              <FaTrash className="text-4xl text-slate-300" />
+          <div className="h-full flex flex-col justify-center items-center text-center text-slate-500">
+            <div className="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mb-4">
+              <FaTrash className="text-4xl text-slate-400" />
             </div>
             <p className="text-slate-600 font-medium mb-1">
               Sin datos para mostrar
@@ -364,7 +463,7 @@ export default function RestoreManager() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <CleanupOption
-                      label="Galeria (Fotos)"
+                      label="Galeria"
                       count={report.media.camera}
                       icon={<FaImages className="text-slate-600" />}
                       checked={targets.camera}
@@ -378,7 +477,7 @@ export default function RestoreManager() {
                       onChange={() => handleToggleTarget("whatsapp")}
                     />
                     <CleanupOption
-                      label="Descargas"
+                      label="Mis Archivos (Docs/Descargas)"
                       count={report.media.downloads}
                       icon={<FaDownload className="text-orange-500" />}
                       checked={targets.downloads}
@@ -529,7 +628,7 @@ export default function RestoreManager() {
                   Resumen de elementos
                 </h4>
 
-                <div className="max-h-90 overflow-y-auto pr-2 rounded-lg p-1 custom-scrollbar">
+                <div className="max-h-90 overflow-y-auto pr-2 rounded-lg p-1">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {getReviewSummary().map((item, idx) => (
                       <div
@@ -538,11 +637,7 @@ export default function RestoreManager() {
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
                           <div
-                            className={`p-2 rounded-md shrink-0 ${
-                              item.isApp
-                                ? "bg-green-100 text-green-600"
-                                : "bg-red-100 text-red-500"
-                            }`}
+                            className={`p-2 rounded-md shrink-0 ${item.isApp ? "bg-green-100 text-green-600" : "bg-red-100 text-red-500"}`}
                           >
                             {item.icon}
                           </div>
@@ -550,7 +645,6 @@ export default function RestoreManager() {
                             {item.label}
                           </span>
                         </div>
-
                         <button
                           onClick={() =>
                             handleRemoveFromReview(item.type, item.id)
@@ -584,22 +678,31 @@ export default function RestoreManager() {
           </AnimatePresence>
         )}
 
-        {/* VISTA 4: PROCESANDO / RESULTADOS */}
+        {/* VISTA 4: PROCESANDO / RESULTADOS CON BARRA DE PROGRESO */}
         {(step === "processing" || step === "results") && (
           <div className="h-full flex flex-col relative">
             <div className="flex-1 p-6 mb-10 flex flex-col overflow-hidden">
               {/* Encabezado del estado */}
               <div className="text-center mb-6 shrink-0">
                 {step === "processing" ? (
-                  <div className="animate-pulse">
-                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <FaSpinner className="text-3xl text-blue-500 animate-spin" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-700">
-                      Eliminando datos...
+                  <div className="animate-pulse w-full max-w-md mx-auto">
+                    <h3 className="text-lg font-bold text-slate-700 mb-2">
+                      Eliminando datos... ({percentage}%)
                     </h3>
-                    <p className="text-sm text-slate-500">
-                      Por favor no desconectes el dispositivo
+
+                    {/* BARRA DE PROGRESO */}
+                    <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden shadow-inner border border-slate-300 relative">
+                      <div
+                        className="h-full bg-linear-to-r from-green-500 to-green-600 rounded-full transition-all duration-300 ease-out flex items-center justify-end pr-1"
+                        style={{ width: `${percentage}%` }}
+                      >
+                        {percentage > 5 && (
+                          <div className="w-1 h-1 bg-white/50 rounded-full animate-ping"></div>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 font-mono">
+                      Procesando tarea {progress.current} de {progress.total}
                     </p>
                   </div>
                 ) : (
@@ -618,37 +721,32 @@ export default function RestoreManager() {
               </div>
 
               {/* Consola de Logs Estilizada */}
-              <div className="flex-1 bg-slate-900 rounded-xl p-4 overflow-y-auto font-mono text-xs text-green-400 shadow-inner border border-slate-800 custom-scrollbar">
-                {logs.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-slate-600 italic">
-                    Iniciando secuencia de comandos...
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {logs.map((log, idx) => (
-                      <motion.li
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        key={idx}
-                        className="flex items-start gap-2 border-b border-slate-800 pb-1 last:border-0"
-                      >
-                        <span className="mt-0.5 opacity-50">➜</span>
-                        <span>{log}</span>
-                      </motion.li>
-                    ))}
-                    {step === "processing" && (
-                      <li className="flex items-center gap-2 text-slate-400 animate-pulse mt-4 pt-2 border-t border-dashed border-slate-700">
-                        <FaSpinner className="animate-spin text-[10px]" />{" "}
-                        Procesando siguiente tarea...
-                      </li>
-                    )}
-                    {step === "results" && (
-                      <li className="text-green-300 font-bold mt-4 pt-4 border-t border-slate-700 flex items-center gap-2">
-                        ✅ PROCESO COMPLETADO
-                      </li>
-                    )}
-                  </ul>
-                )}
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="bg-slate-900 rounded-xl p-4 overflow-y-auto max-h-[350px] font-mono text-xs text-green-400 shadow-inner border border-slate-800 custom-scrollbar relative">
+                  {logs.length === 0 ? (
+                    <div className="h-40 flex items-center justify-center text-slate-600 italic">
+                      <div className="text-center">
+                        <FaSpinner className="animate-spin mx-auto mb-2" />
+                        Iniciando eliminación de datos...
+                      </div>
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {logs.map((log, idx) => (
+                        <motion.li
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          key={idx}
+                          className="flex items-start gap-2 border-b border-slate-800 pb-1 last:border-0"
+                        >
+                          <span className="mt-0.5 opacity-50">➜</span>
+                          <span>{log}</span>
+                        </motion.li>
+                      ))}
+                      <div ref={logsEndRef} />
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -665,8 +763,7 @@ export default function RestoreManager() {
               >
                 {step === "processing" ? (
                   <>
-                    {" "}
-                    <FaSpinner className="animate-spin" /> Esperando...{" "}
+                    <FaSpinner className="animate-spin" /> Procesando...
                   </>
                 ) : (
                   "Finalizar y Volver"
@@ -676,11 +773,69 @@ export default function RestoreManager() {
           </div>
         )}
       </div>
+
+      {/* Modal de Restauración de Fábrica */}
+      <AnimatePresence>
+        {isFactoryResetModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
+            onClick={() => setIsFactoryResetModalOpen(false)}
+          >
+            <motion.div
+              className="bg-white rounded-2xl max-w-md w-full p-8 border-b-8 border-red-600 shadow-2xl"
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center">
+                <div className="mx-auto flex items-center justify-center h-20 w-20 rounded-full bg-red-100 mb-6">
+                  <FaExclamationTriangle className="h-10 w-10 text-red-600 animate-pulse" />
+                </div>
+                <h3 className="text-lg font-black text-slate-800 mb-4 uppercase tracking-tight">
+                  ¡ACCIÓN CRÍTICA!
+                </h3>
+                <p className="text-sm text-slate-600 mb-2 font-bold">
+                  ¿Estás seguro de formatear de fábrica?
+                </p>
+                <div className="bg-slate-50 p-4 rounded-xl text-left text-xs text-slate-500 mb-6 space-y-2 border border-slate-200">
+                  <p>
+                    • Se borrarán <b>todas</b> las cuentas (Google, Samsung,
+                    etc).
+                  </p>
+                  <p>
+                    • Se eliminarán aplicaciones, fotos, música y documentos.
+                  </p>
+                  <p>• El dispositivo volverá a su estado original.</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={handleExecuteFactoryReset}
+                    className="w-full py-4 bg-red-600 text-white rounded-xl font-black text-sm hover:bg-red-700 transition-colors"
+                  >
+                    FORMATEAR
+                  </button>
+                  <button
+                    onClick={() => setIsFactoryResetModalOpen(false)}
+                    className="w-full py-3 text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    Cancelar acción
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-// Subcomponente Opciones
+// Subcomponente de Opciones
 const CleanupOption = ({ label, count, icon, checked, onChange }: any) => {
   const isDisabled = count === 0;
 
@@ -716,8 +871,7 @@ const CleanupOption = ({ label, count, icon, checked, onChange }: any) => {
       </div>
       {!isDisabled && (
         <div
-          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors
-          ${checked ? "border-red-500 bg-red-500 text-white" : "border-slate-300 bg-white"}`}
+          className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${checked ? "border-red-500 bg-red-500 text-white" : "border-slate-300 bg-white"}`}
         >
           {checked && <FaCheckCircle className="text-[10px]" />}
         </div>
