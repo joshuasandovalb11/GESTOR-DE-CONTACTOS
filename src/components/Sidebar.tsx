@@ -41,13 +41,18 @@ export default function Sidebar({
     <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen fixed left-0 top-0 z-50 shadow-2xl">
       {/* Header */}
       <div className="p-6 border-b border-slate-800">
-        <div className="flex items-center gap-3 text-white mb-1">
+        <div className="flex items-center gap-3 text-white">
           <div className="bg-blue-600 p-2 rounded-lg">
             <MonitorSmartphone className="h-6 w-6" />
           </div>
           <div>
             <h1 className="font-bold text-lg leading-tight">Android Manager</h1>
-            <p className="text-xs text-slate-500">v2.0</p>
+            <div className="flex justify-between items-baseline">
+              <span className="text-xs text-slate-500">v2.0</span>
+              <span className="font-mono text-[11px] text-slate-500">
+                20/02/2026
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -92,16 +92,26 @@ export default function MediaManager({
     setDownloadProgress(0);
     setStatusMsg("Iniciando transferencia...");
 
-    const progressInterval = setInterval(() => {
-      setDownloadProgress((prev) => {
-        if (prev > 20 && prev < 50) setStatusMsg("Descargando archivos...");
-        if (prev > 50 && prev < 80) setStatusMsg("Comprimiendo ZIP...");
-        if (prev > 80) setStatusMsg("Finalizando...");
+    const progressInterval = setInterval(async () => {
+      try {
+        const progRes = await axios.get(`${API_URL}/download-progress`);
+        const { completed, total, status } = progRes.data;
 
-        if (prev >= 90) return 90;
-        return prev + (100 / selectedFiles.length) * 0.8;
-      });
-    }, 400);
+        if (total > 0) {
+          const percent = (completed / total) * 100;
+
+          if (status === "downloading") {
+            setStatusMsg(`Descargando: ${completed} de ${total} archivos...`);
+            setDownloadProgress(percent * 0.95);
+          } else if (status === "compressing") {
+            setStatusMsg("Empaquetando ZIP...");
+            setDownloadProgress(99);
+          }
+        }
+      } catch (error) {
+        // Ignoramos errores de red temporales para no interrumpir
+      }
+    }, 1000);
 
     try {
       const res = await axios.post(`${API_URL}/download-media-zip`, {
