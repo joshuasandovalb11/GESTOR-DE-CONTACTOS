@@ -213,7 +213,7 @@ export default function ContactTable({
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data: any[] = XLSX.utils.sheet_to_json(ws);
+      const data: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
       if (data.length === 0) {
         toast.error("El archivo Excel está vacío.");
@@ -249,7 +249,7 @@ export default function ContactTable({
       const rowName = String(row.Nombre || "").trim();
       const uniqueKey = `${rowName.toLowerCase()}|${cleanPhone}`;
 
-      if (cleanPhone.length !== 10) {
+      if (cleanPhone.length !== 10 && cleanPhone.length !== 0) {
         errors.push({
           row: realRowNumber,
           name: rowName || "Desconocido",
