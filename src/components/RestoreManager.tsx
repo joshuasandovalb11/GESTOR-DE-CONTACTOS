@@ -58,7 +58,6 @@ export default function RestoreManager() {
   const [appSearchTerm, setAppSearchTerm] = useState("");
   const [isFactoryResetModalOpen, setIsFactoryResetModalOpen] = useState(false);
 
-  // Estado para la barra de progreso
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const [targets, setTargets] = useState({
@@ -73,7 +72,6 @@ export default function RestoreManager() {
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll para los logs
   useEffect(() => {
     if (logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -316,7 +314,6 @@ export default function RestoreManager() {
     return summary;
   };
 
-  // Calcular porcentaje para la barra
   const percentage =
     progress.total > 0
       ? Math.round((progress.current / progress.total) * 100)
@@ -678,11 +675,10 @@ export default function RestoreManager() {
           </AnimatePresence>
         )}
 
-        {/* VISTA 4: PROCESANDO / RESULTADOS CON BARRA DE PROGRESO */}
+        {/* VISTA 4: RESULTADOS */}
         {(step === "processing" || step === "results") && (
           <div className="h-full flex flex-col relative">
             <div className="flex-1 p-6 mb-10 flex flex-col overflow-hidden">
-              {/* Encabezado del estado */}
               <div className="text-center mb-6 shrink-0">
                 {step === "processing" ? (
                   <div className="animate-pulse w-full max-w-md mx-auto">
@@ -720,7 +716,7 @@ export default function RestoreManager() {
                 )}
               </div>
 
-              {/* Consola de Logs Estilizada */}
+              {/* Consola de Logs */}
               <div className="flex-1 flex flex-col min-h-0">
                 <div className="bg-slate-900 rounded-xl p-4 overflow-y-auto max-h-[350px] font-mono text-xs text-green-400 shadow-inner border border-slate-800 custom-scrollbar relative">
                   {logs.length === 0 ? (

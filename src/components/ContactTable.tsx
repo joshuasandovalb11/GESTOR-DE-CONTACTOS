@@ -57,7 +57,7 @@ const formatPhoneNumber = (value: string) => {
   return `${phoneNumber.slice(0, 3)} ${phoneNumber.slice(3, 6)} ${phoneNumber.slice(6, 10)}`;
 };
 
-// Modal generico
+// Modal
 const Modal = ({
   children,
   onClose,
@@ -787,7 +787,7 @@ export default function ContactTable({
             onClose={closeEditModal}
             className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-colors scale-100 relative"
           >
-            {/* Botón Cerrar Flotante */}
+            {/* Botón Cerrar */}
             {!saveSuccess && (
               <button
                 onClick={closeEditModal}
@@ -812,7 +812,7 @@ export default function ContactTable({
               </div>
             ) : (
               <>
-                {/* Cabecera Visual con Avatar */}
+                {/* Cabecera */}
                 <div className="bg-white pt-10 px-4 pb-2 flex flex-col items-center justify-center text-slate-800 relative overflow-hidden">
                   <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-blue-100">
                     <UserRoundPen className="w-8 h-8 text-blue-600" />
@@ -971,7 +971,7 @@ export default function ContactTable({
         )}
       </AnimatePresence>
 
-      {/* VISTA DE PROGRESO Y CARGA (ESTADO IMPORTING) */}
+      {/* VISTA DE PROGRESO Y CARGA */}
       {importing && (
         <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-8 backdrop-blur-md text-white animate-fade-in">
           {/* CASO 1: INSTRUCCIONES MANUALES PARA VCF */}
@@ -1063,7 +1063,7 @@ export default function ContactTable({
               </div>
             </div>
           ) : !importSuccess ? (
-            /* CASO 2: BARRA DE PROGRESO (CARGANDO) */
+            /* CASO 2: BARRA DE PROGRESO */
             <>
               <FaSpinner className="text-6xl animate-spin mb-6 text-blue-400" />
               <h2 className="text-2xl font-bold">Sincronizando...</h2>

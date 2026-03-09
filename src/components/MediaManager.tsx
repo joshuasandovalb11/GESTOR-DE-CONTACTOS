@@ -109,7 +109,7 @@ export default function MediaManager({
           }
         }
       } catch (error) {
-        // Ignoramos errores de red temporales para no interrumpir
+        //
       }
     }, 1000);
 
@@ -219,7 +219,7 @@ export default function MediaManager({
           </AnimatePresence>
         )}
 
-        {/* ESTADO VACÍO DESPUÉS DEL ESCANEO */}
+        {/* ESTADO VACÍO */}
         {hasScanned && !loading && files.length === 0 && (
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
@@ -265,7 +265,7 @@ export default function MediaManager({
                 </div>
               </div>
 
-              {/* Grid de Selección */}
+              {/* Selección */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 {/* Tarjeta FOTOS */}
                 <div
@@ -358,9 +358,8 @@ export default function MediaManager({
                 </div>
               </div>
 
-              {/* Área de Acción (Descarga) */}
+              {/* Área de Acción */}
               <div className="bg-slate-900 rounded-2xl p-15 text-white shadow-xl relative overflow-hidden">
-                {/* Fondo decorativo */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500 rounded-full mix-blend-overlay filter blur-3xl opacity-10 -translate-y-1/2 translate-x-1/2"></div>
 
                 {!downloading && !downloadSuccess ? (

@@ -20,12 +20,10 @@ function App() {
   const { user, loading: authLoading, logout } = useAuth();
   const [activeTab, setActiveTab] = useState("contacts");
 
-  // Estados de UI Globales
   const [isLoginTransition, setIsLoginTransition] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
-  // Estados de Conexión
   const [status, setStatus] = useState<string>("Esperando conexión...");
   const [loading, setLoading] = useState<boolean>(false);
   const [connectionSuccess, setConnectionSuccess] = useState<boolean>(false);

@@ -48,9 +48,9 @@ export default function Sidebar({
           <div>
             <h1 className="font-bold text-lg leading-tight">Android Manager</h1>
             <div className="flex justify-between items-baseline">
-              <span className="text-xs text-slate-500">v2.0</span>
-              <span className="font-mono text-[11px] text-slate-500">
-                20/02/2026
+              <span className="text-xs text-slate-400">v3.0</span>
+              <span className="font-mono text-[11px] text-slate-400">
+                Marzo 4, 2026
               </span>
             </div>
           </div>
@@ -90,7 +90,6 @@ export default function Sidebar({
                 N/S: {deviceInfo.serial}
               </p>
 
-              {/* 4. BOTÓN DE DESCONEXIÓN AÑADIDO AQUÍ */}
               <button
                 onClick={onDisconnect}
                 className="w-full flex items-center justify-center gap-2 text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-1.5 rounded-lg transition-all hover:scale-[1.02] active:scale-[0.98]"

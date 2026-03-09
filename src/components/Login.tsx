@@ -86,7 +86,7 @@ export default function Login({ onLoginTransition }: LoginProps) {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
-            {/* Mensaje de Error Animado */}
+            {/* Mensaje de Error */}
             <div className="h-14 relative">
               <AnimatePresence>
                 {error && (

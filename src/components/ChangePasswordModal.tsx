@@ -89,7 +89,6 @@ export default function ChangePassword({
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop con desenfoque elegante */}
           <motion.div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
@@ -98,7 +97,7 @@ export default function ChangePassword({
             onClick={onClose}
           />
 
-          {/* Tarjeta Modal "Security Style" */}
+          {/* Tarjeta Modal */}
           <motion.div
             className="relative w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -107,7 +106,7 @@ export default function ChangePassword({
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Botón Cerrar Flotante */}
+            {/* Botón Cerrar */}
             <button
               onClick={onClose}
               className="absolute top-4 right-4 text-slate-500 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors z-10"
@@ -135,7 +134,7 @@ export default function ChangePassword({
                 </div>
               ) : (
                 <form onSubmit={handleSubmit}>
-                  {/* Icono Cabecera */}
+                  {/* Cabecera */}
                   <div className="flex flex-col items-center mb-8">
                     <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mb-4 shadow-sm border border-blue-100">
                       <KeyRound className="w-8 h-8 text-blue-600" />
